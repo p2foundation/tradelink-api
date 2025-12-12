@@ -1,0 +1,404 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  FARMER
+  BUYER
+  EXPORT_COMPANY
+  ADMIN
+}
+
+enum ListingStatus {
+  ACTIVE
+  PENDING
+  SOLD
+  EXPIRED
+}
+
+enum QualityGrade {
+  PREMIUM
+  GRADE_A
+  GRADE_B
+  STANDARD
+}
+
+enum MatchStatus {
+  SUGGESTED
+  CONTACTED
+  NEGOTIATING
+  CONTRACT_SIGNED
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      UserRole
+  firstName String
+  lastName  String
+  phone     String?
+  avatar    String?
+  verified  Boolean  @default(false)
+  locale    String   @default("en") // ISO 639-1 language code
+  timezone  String   @default("Africa/Accra") // IANA timezone
+  currency  String   @default("USD") // ISO 4217 currency code
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  farmer        Farmer?
+  buyer         Buyer?
+  exportCompany ExportCompany?
+
+  @@index([email])
+  @@index([role])
+  @@index([locale])
+  @@map("users")
+}
+
+model Farmer {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  businessName  String?
+  location      String
+  district      String
+  region        String
+  gpsAddress    String?
+  farmSize      Float? // in acres
+  cooperativeId String?
+
+  certifications    String[] // ["Organic", "Fair Trade", etc.]
+  bankAccount       String?
+  mobileMoneyNumber String?
+
+  listings Listing[]
+  matches  Match[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([region, district])
+}
+
+model Buyer {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  companyName String
+  country     String // ISO 3166-1 alpha-2 country code
+  countryName String? // Full country name for display
+  industry    String
+  website     String?
+  companySize String?
+
+  seekingCrops      String[]
+  volumeRequired    String? // e.g., "50 tons/month"
+  qualityStandards  String[]
+  preferredCurrency String?  @default("USD") // ISO 4217 currency code
+
+  matches      Match[]
+  transactions Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([country])
+  @@index([industry])
+  @@map("buyers")
+}
+
+model ExportCompany {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  companyName    String
+  registrationNo String  @unique
+  gepaLicense    String?
+
+  transactions Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Listing {
+  id       String @id @default(cuid())
+  farmerId String
+  farmer   Farmer @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  cropType     String
+  cropVariety  String?
+  quantity     Float // in tons
+  unit         String       @default("tons")
+  qualityGrade QualityGrade
+  pricePerUnit Float // in USD
+
+  harvestDate    DateTime?
+  availableFrom  DateTime
+  availableUntil DateTime?
+
+  description    String?
+  images         String[]
+  certifications String[]
+
+  status ListingStatus @default(ACTIVE)
+
+  matches Match[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cropType, status])
+  @@index([availableFrom, availableUntil])
+  @@index([farmerId])
+}
+
+model Match {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  farmerId String
+  farmer   Farmer @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  buyerId String
+  buyer   Buyer  @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  compatibilityScore Float // 0-100
+  estimatedValue     Float // in USD
+
+  status MatchStatus @default(SUGGESTED)
+
+  aiRecommendation String? // JSON with match reasons
+
+  contactedAt          DateTime?
+  negotiationStartedAt DateTime?
+  contractSignedAt     DateTime?
+  completedAt          DateTime?
+
+  transactions Transaction[]
+  negotiations Negotiation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([farmerId, buyerId])
+}
+
+enum NegotiationStatus {
+  ACTIVE
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COUNTERED
+  EXPIRED
+}
+
+model Negotiation {
+  id      String @id @default(cuid())
+  matchId String
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  status NegotiationStatus @default(ACTIVE)
+
+  initialPrice Float // Initial listing price
+  currentPrice Float // Current negotiated price
+  quantity     Float // Negotiated quantity
+  currency     String @default("USD")
+
+  terms         String? // JSON string for additional terms
+  deliveryTerms String? // Delivery location, method, timeline
+  paymentTerms  String? // Payment schedule, method preferences
+
+  initiatedBy   String // User ID who started negotiation
+  lastUpdatedBy String // User ID who made last update
+
+  acceptedAt DateTime?
+  rejectedAt DateTime?
+  expiresAt  DateTime? // Negotiation expiry date
+
+  offers      Offer[]
+  transaction Transaction?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([matchId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("negotiations")
+}
+
+model Offer {
+  id            String      @id @default(cuid())
+  negotiationId String
+  negotiation   Negotiation @relation(fields: [negotiationId], references: [id], onDelete: Cascade)
+
+  offeredBy     String // User ID (buyer or farmer)
+  offeredByRole UserRole // Role of person making offer
+
+  price    Float
+  quantity Float
+  currency String @default("USD")
+
+  message String? // Optional message with offer
+  terms   String? // JSON string for additional terms
+
+  status OfferStatus @default(PENDING)
+
+  respondedAt     DateTime?
+  responseMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([negotiationId])
+  @@index([offeredBy])
+  @@index([status])
+  @@index([createdAt])
+  @@map("offers")
+}
+
+enum PaymentMethod {
+  VISA
+  MASTERCARD
+  MOBILE_MONEY
+  PAPSS
+  BANK_TRANSFER
+  MANUAL_PORT
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  VERIFIED // For manual payments
+  REJECTED // For manual payments
+}
+
+model Transaction {
+  id      String @id @default(cuid())
+  matchId String
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  negotiationId String?      @unique
+  negotiation   Negotiation? @relation(fields: [negotiationId], references: [id])
+
+  buyerId String
+  buyer   Buyer  @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  exportCompanyId String?
+  exportCompany   ExportCompany? @relation(fields: [exportCompanyId], references: [id])
+
+  quantity    Float
+  agreedPrice Float
+  totalValue  Float
+  currency    String @default("USD") // ISO 4217 currency code
+
+  contractDocument String?
+  invoiceDocument  String?
+
+  paymentStatus  String @default("pending")
+  shipmentStatus String @default("pending")
+
+  paymentDate  DateTime?
+  shipmentDate DateTime?
+  deliveryDate DateTime?
+
+  gcmsReferenceNo String? // Integration with Ghana Customs
+  exchangeRate    Float? // Exchange rate at time of transaction
+  localCurrency   String? // Local currency if different from USD
+
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([paymentStatus, shipmentStatus])
+  @@index([buyerId])
+  @@index([currency])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model Payment {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  amount       Float
+  currency     String @default("USD")
+  exchangeRate Float? // Exchange rate if currency conversion
+
+  paymentMethod PaymentMethod
+  paymentStatus PaymentStatus @default(PENDING)
+
+  // For integrated payments
+  provider              String? // "stripe", "paystack", "mobile_money", "papss"
+  providerTransactionId String? // Transaction ID from payment provider
+  providerResponse      String? // JSON response from provider
+
+  // For manual payments (Ghana Port system)
+  isManual          Boolean   @default(false)
+  receiptDocument   String? // Uploaded receipt/chit document
+  receiptNumber     String? // Receipt number from port
+  receiptDate       DateTime? // Date on receipt
+  uploadedBy        String? // User ID who uploaded receipt
+  verifiedBy        String? // Admin/verifier user ID
+  verifiedAt        DateTime?
+  verificationNotes String?
+
+  // Payment details
+  paidAt        DateTime?
+  failureReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([transactionId])
+  @@index([paymentStatus])
+  @@index([paymentMethod])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model Analytics {
+  id   String   @id @default(cuid())
+  date DateTime @unique @default(now())
+
+  totalFarmers  Int @default(0)
+  totalBuyers   Int @default(0)
+  totalListings Int @default(0)
+  activeMatches Int @default(0)
+
+  dailyTradeValue     Float @default(0)
+  avgPriceImprovement Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}
