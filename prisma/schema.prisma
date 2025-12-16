@@ -56,6 +56,7 @@ model User {
   farmer        Farmer?
   buyer         Buyer?
   exportCompany ExportCompany?
+  documents     Document[]
 
   @@index([email])
   @@index([role])
@@ -80,8 +81,9 @@ model Farmer {
   bankAccount       String?
   mobileMoneyNumber String?
 
-  listings Listing[]
-  matches  Match[]
+  listings         Listing[]
+  matches          Match[]
+  supplierNetworks SupplierNetwork[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -126,10 +128,46 @@ model ExportCompany {
   registrationNo String  @unique
   gepaLicense    String?
 
-  transactions Transaction[]
+  transactions     Transaction[]
+  supplierNetworks SupplierNetwork[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model SupplierNetwork {
+  id              String        @id @default(cuid())
+  exportCompanyId String
+  exportCompany   ExportCompany @relation(fields: [exportCompanyId], references: [id], onDelete: Cascade)
+  farmerId        String
+  farmer          Farmer        @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  // Relationship metadata
+  status            String    @default("ACTIVE") // ACTIVE, INACTIVE, PENDING, SUSPENDED
+  relationshipType  String? // DIRECT, COOPERATIVE, CONTRACT, PARTNERSHIP
+  contractStartDate DateTime?
+  contractEndDate   DateTime?
+  notes             String?
+
+  // Performance metrics
+  totalDeals       Int       @default(0)
+  totalValue       Float     @default(0)
+  qualityScore     Float? // 0-100
+  reliabilityScore Float? // 0-100
+  lastDealDate     DateTime?
+
+  // Added by export company
+  addedBy String // User ID who added this farmer
+  addedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([exportCompanyId, farmerId])
+  @@index([exportCompanyId])
+  @@index([farmerId])
+  @@index([status])
+  @@map("supplier_networks")
 }
 
 model Listing {
@@ -332,7 +370,8 @@ model Transaction {
   exchangeRate    Float? // Exchange rate at time of transaction
   localCurrency   String? // Local currency if different from USD
 
-  payments Payment[]
+  payments  Payment[]
+  documents Document[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -401,4 +440,62 @@ model Analytics {
   updatedAt DateTime @updatedAt
 
   @@index([date])
+}
+
+enum DocumentType {
+  EXPORT_LICENSE
+  IMPORT_PERMIT
+  CERTIFICATE_OF_ORIGIN
+  PHYTOSANITARY_CERTIFICATE
+  QUALITY_CERTIFICATE
+  ORGANIC_CERTIFICATION
+  FAIR_TRADE_CERTIFICATION
+  COMMERCIAL_INVOICE
+  PACKING_LIST
+  BILL_OF_LADING
+  INSURANCE_CERTIFICATE
+  TRADE_CONTRACT
+  GEPA_LICENSE
+  CUSTOMS_DECLARATION
+  HEALTH_CERTIFICATE
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+model Document {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name            String
+  type            DocumentType
+  fileUrl         String // Base64 or URL to stored file
+  description     String?
+  expiryDate      DateTime?
+  status          DocumentStatus @default(PENDING)
+  referenceNumber String? // License number, certificate number, etc.
+  issuedBy        String? // Issuing authority (GEPA, GRA, etc.)
+
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+
+  verifiedAt        DateTime?
+  verifiedBy        String? // Admin user ID who verified
+  verificationNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([transactionId])
+  @@index([expiryDate])
+  @@map("documents")
 }

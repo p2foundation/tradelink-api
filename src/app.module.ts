@@ -17,6 +17,8 @@ import { FinanceModule } from './finance/finance.module';
 import { HealthModule } from './health/health.module';
 import { NegotiationsModule } from './negotiations/negotiations.module';
 import { PaymentsModule } from './payments/payments.module';
+import { DocumentsModule } from './documents/documents.module';
+import { SupplierNetworksModule } from './supplier-networks/supplier-networks.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { LoggingMiddleware } from './common/middleware/logging.middleware';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -46,6 +48,8 @@ import databaseConfig from './config/database.config';
     FinanceModule,
     NegotiationsModule,
     PaymentsModule,
+    DocumentsModule,
+    SupplierNetworksModule,
   ],
   providers: [
     {
