@@ -11,6 +11,13 @@ enum UserRole {
   FARMER
   BUYER
   EXPORT_COMPANY
+  TRADER
+  LOGISTICS_PROVIDER
+  CUSTOMS_BROKER
+  QUALITY_ASSURANCE
+  FINANCIAL_INSTITUTION
+  GOVERNMENT_OFFICIAL
+  AGRIBUSINESS
   ADMIN
 }
 
@@ -108,6 +115,27 @@ model Buyer {
   qualityStandards  String[]
   preferredCurrency String?  @default("USD") // ISO 4217 currency code
 
+  // New fields for international buyers
+  importLicenseNumber    String?
+  businessRegistration   String?
+  taxIdNumber           String?
+  preferredLanguage     String?  @default("en")
+  timezone              String?
+
+  // Compliance tracking
+  complianceStatus      String?  // PENDING, VERIFIED, REJECTED
+  complianceDocuments   String[] // Array of document IDs
+  lastComplianceCheck   DateTime?
+
+  // Market-specific preferences
+  targetMarkets         String[] // ["USA", "EU", "China"]
+  importRequirements    Json?    // Country-specific requirements stored as JSON
+
+  // Ghana Single Window verification
+  verifiedByGhanaSW     Boolean  @default(false)
+  ghanaSWReference      String?
+  verificationDate      DateTime?
+
   matches      Match[]
   transactions Transaction[]
 
@@ -116,6 +144,8 @@ model Buyer {
 
   @@index([country])
   @@index([industry])
+  @@index([complianceStatus])
+  @@index([verifiedByGhanaSW])
   @@map("buyers")
 }
 

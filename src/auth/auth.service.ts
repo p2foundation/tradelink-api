@@ -14,21 +14,40 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private config: ConfigService,
-  ) {}
+  ) {
+    // Validate JWT secrets are configured
+    const jwtSecret = this.config.get<string>('JWT_SECRET');
+    const jwtRefreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
+    
+    if (!jwtSecret) {
+      this.logger.error('JWT_SECRET is not configured in environment variables');
+      throw new Error('JWT_SECRET is required but not configured');
+    }
+    
+    if (!jwtRefreshSecret) {
+      this.logger.error('JWT_REFRESH_SECRET is not configured in environment variables');
+      throw new Error('JWT_REFRESH_SECRET is required but not configured');
+    }
+    
+    this.logger.log('JWT secrets validated successfully');
+  }
 
   async register(registerDto: RegisterDto) {
     const { email, password, firstName, lastName, role, phone, metadata } = registerDto;
 
-    this.logger.log(`Registration attempt for email: ${email}, role: ${role}`);
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = email.toLowerCase().trim();
+
+    this.logger.log(`Registration attempt for email: ${normalizedEmail}, role: ${role}`);
 
     try {
-      // Check if user exists
-      const existingUser = await this.prisma.user.findUnique({
-        where: { email },
-      });
+      // Check if user exists (case-insensitive using raw query for PostgreSQL)
+      const existingUser = await this.prisma.$queryRaw`
+        SELECT * FROM users WHERE LOWER(email) = LOWER(${normalizedEmail}) LIMIT 1
+      ` as any;
 
       if (existingUser) {
-        this.logger.warn(`Registration failed: User already exists - ${email}`);
+        this.logger.warn(`Registration failed: User already exists - ${normalizedEmail}`);
         throw new UnauthorizedException('User with this email already exists');
       }
 
@@ -36,11 +55,11 @@ export class AuthService {
       this.logger.debug('Hashing password...');
       const hashedPassword = await bcrypt.hash(password, 12);
 
-      // Create user
-      this.logger.log(`Creating user: ${email}`);
+      // Create user with normalized email
+      this.logger.log(`Creating user: ${normalizedEmail}`);
       const user = await this.prisma.user.create({
         data: {
-          email,
+          email: normalizedEmail,
           password: hashedPassword,
           firstName,
           lastName,
@@ -74,7 +93,7 @@ export class AuthService {
             this.logger.error(`Failed to create export company profile: ${error.message}`);
             // Don't fail registration if profile creation fails, user can complete it later
           }
-        } else if (role === 'BUYER' && (metadata as any).organization) {
+        } else if (role === 'BUYER' && ((metadata as any).organization || metadata.companyName)) {
           try {
             await this.prisma.buyer.create({
               data: {
@@ -90,8 +109,13 @@ export class AuthService {
             this.logger.log(`Buyer profile created for user: ${user.id}`);
           } catch (error) {
             this.logger.error(`Failed to create buyer profile: ${error.message}`);
+            // Don't fail registration if profile creation fails
           }
         }
+        // Note: Other roles (TRADER, LOGISTICS_PROVIDER, CUSTOMS_BROKER, etc.) 
+        // don't have specific profile tables yet, but metadata is stored in user record
+        // and can be used to create profiles later when those models are added
+        this.logger.debug(`Registration metadata stored for role: ${role}`);
       }
 
       // Generate tokens
@@ -101,14 +125,14 @@ export class AuthService {
       // Remove password from response
       const { password: _, ...userWithoutPassword } = user;
 
-      this.logger.log(`Registration successful: ${email} (${user.id})`);
+      this.logger.log(`Registration successful: ${normalizedEmail} (${user.id})`);
 
       return {
         user: userWithoutPassword,
         ...tokens,
       };
     } catch (error) {
-      this.logger.error(`Registration error for ${email}: ${error.message}`, error.stack);
+      this.logger.error(`Registration error for ${normalizedEmail}: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -116,16 +140,27 @@ export class AuthService {
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
 
-    this.logger.log(`Login attempt for email: ${email}`);
+    // Normalize email to lowercase for case-insensitive lookup
+    const normalizedEmail = email.toLowerCase().trim();
+
+    this.logger.log(`Login attempt for email: ${normalizedEmail}`);
 
     try {
-      // Find user
-      const user = await this.prisma.user.findUnique({
-        where: { email },
+      // Find user - try exact match first (for new users with normalized emails)
+      // Then try case-insensitive search for existing users with mixed-case emails
+      let user = await this.prisma.user.findUnique({
+        where: { email: normalizedEmail },
       });
 
+      // If not found, try case-insensitive search using raw query for PostgreSQL
       if (!user) {
-        this.logger.warn(`Login failed: User not found - ${email}`);
+        user = await this.prisma.$queryRaw`
+          SELECT * FROM users WHERE LOWER(email) = LOWER(${normalizedEmail}) LIMIT 1
+        ` as any;
+      }
+
+      if (!user) {
+        this.logger.warn(`Login failed: User not found - ${normalizedEmail}`);
         throw new UnauthorizedException('Invalid credentials');
       }
 
@@ -152,7 +187,7 @@ export class AuthService {
         ...tokens,
       };
     } catch (error) {
-      this.logger.error(`Login error for ${email}: ${error.message}`, error.stack);
+      this.logger.error(`Login error for ${normalizedEmail}: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -243,9 +278,15 @@ export class AuthService {
     
     this.logger.debug('Refreshing token...');
     
+    const refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
+    if (!refreshSecret) {
+      this.logger.error('JWT_REFRESH_SECRET is not configured');
+      throw new UnauthorizedException('Server configuration error: Refresh token secret not configured');
+    }
+    
     try {
       const payload = await this.jwtService.verifyAsync(refreshToken, {
-        secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+        secret: refreshSecret,
       });
       
       this.logger.log(`Token refresh successful for user: ${payload.sub} (${payload.email})`);
@@ -253,23 +294,53 @@ export class AuthService {
       const tokens = await this.generateTokens(payload.sub, payload.email, payload.role);
       return tokens;
     } catch (error) {
-      this.logger.error(`Token refresh failed: ${error.message}`, error.stack);
-      throw new UnauthorizedException('Invalid refresh token');
+      // Provide more specific error messages
+      if (error.name === 'JsonWebTokenError') {
+        if (error.message === 'invalid signature') {
+          this.logger.error(`Token refresh failed: Invalid signature. This usually means the token was signed with a different secret or the secret has changed.`, error.stack);
+          throw new UnauthorizedException('Invalid refresh token: Token signature mismatch. Please log in again.');
+        } else if (error.message === 'jwt malformed') {
+          this.logger.error(`Token refresh failed: Malformed token`, error.stack);
+          throw new UnauthorizedException('Invalid refresh token: Token format is invalid. Please log in again.');
+        } else {
+          this.logger.error(`Token refresh failed: ${error.message}`, error.stack);
+          throw new UnauthorizedException(`Invalid refresh token: ${error.message}. Please log in again.`);
+        }
+      } else if (error.name === 'TokenExpiredError') {
+        this.logger.warn(`Token refresh failed: Token expired`);
+        throw new UnauthorizedException('Refresh token has expired. Please log in again.');
+      } else {
+        this.logger.error(`Token refresh failed: ${error.message}`, error.stack);
+        throw new UnauthorizedException('Invalid refresh token. Please log in again.');
+      }
     }
   }
 
   private async generateTokens(userId: string, email: string, role: string) {
     this.logger.debug(`Generating tokens for user: ${userId} (${email})`);
     
+    const jwtSecret = this.config.get<string>('JWT_SECRET');
+    const jwtRefreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
+    
+    if (!jwtSecret) {
+      this.logger.error('JWT_SECRET is not configured');
+      throw new Error('JWT_SECRET is required but not configured');
+    }
+    
+    if (!jwtRefreshSecret) {
+      this.logger.error('JWT_REFRESH_SECRET is not configured');
+      throw new Error('JWT_REFRESH_SECRET is required but not configured');
+    }
+    
     const payload = { sub: userId, email, role };
 
     const accessToken = this.jwtService.sign(payload, {
-      secret: this.config.get<string>('JWT_SECRET'),
+      secret: jwtSecret,
       expiresIn: this.config.get<string>('JWT_EXPIRES_IN') || '1h',
     });
 
     const refreshToken = this.jwtService.sign(payload, {
-      secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+      secret: jwtRefreshSecret,
       expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d',
     });
 

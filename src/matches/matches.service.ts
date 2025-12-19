@@ -140,13 +140,33 @@ export class MatchesService {
       throw new NotFoundException(`Buyer with ID ${buyerId} not found`);
     }
 
+    // For international buyers, only show verified farmers/traders
+    const whereClause: any = { status: 'ACTIVE' };
+    
+    // If buyer is from outside Ghana, only show verified suppliers
+    if (buyer.country && buyer.country !== 'GH') {
+      whereClause.farmer = {
+        user: {
+          verified: true,
+        },
+      };
+    }
+
     // Get active listings
     const listings = await this.prisma.listing.findMany({
-      where: { status: 'ACTIVE' },
+      where: whereClause,
       include: {
         farmer: {
           include: {
-            user: true,
+            user: {
+              include: {
+                documents: {
+                  where: {
+                    status: 'VERIFIED',
+                  },
+                },
+              },
+            },
           },
         },
       },

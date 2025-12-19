@@ -13,6 +13,7 @@ import { BuyersService } from './buyers.service';
 import { CreateBuyerDto } from './dto/create-buyer.dto';
 import { UpdateBuyerDto } from './dto/update-buyer.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -41,6 +42,16 @@ export class BuyersController {
       page: page ? parseInt(page) : undefined,
       limit: limit ? parseInt(limit) : undefined,
     });
+  }
+
+  @Get('me')
+  getCurrentBuyer(@CurrentUser() user: any) {
+    return this.buyersService.findByUserId(user.sub);
+  }
+
+  @Get('user/:userId')
+  findByUserId(@Param('userId') userId: string) {
+    return this.buyersService.findByUserId(userId);
   }
 
   @Get(':id')

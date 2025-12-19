@@ -7,6 +7,33 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
+  // Validate critical environment variables
+  const requiredEnvVars = {
+    JWT_SECRET: process.env.JWT_SECRET,
+    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+    DATABASE_URL: process.env.DATABASE_URL,
+  };
+
+  const missingVars = Object.entries(requiredEnvVars)
+    .filter(([_, value]) => !value)
+    .map(([key]) => key);
+
+  if (missingVars.length > 0) {
+    logger.error(`❌ Missing required environment variables: ${missingVars.join(', ')}`);
+    logger.error('Please ensure these are set in your .env file');
+    process.exit(1);
+  }
+
+  // Validate JWT secrets are not empty
+  if (requiredEnvVars.JWT_SECRET && requiredEnvVars.JWT_SECRET.length < 32) {
+    logger.warn('⚠️  JWT_SECRET should be at least 32 characters long for security');
+  }
+  if (requiredEnvVars.JWT_REFRESH_SECRET && requiredEnvVars.JWT_REFRESH_SECRET.length < 32) {
+    logger.warn('⚠️  JWT_REFRESH_SECRET should be at least 32 characters long for security');
+  }
+
+  logger.log('✅ Environment variables validated');
+
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });

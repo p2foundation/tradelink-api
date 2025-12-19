@@ -19,6 +19,8 @@ import { NegotiationsModule } from './negotiations/negotiations.module';
 import { PaymentsModule } from './payments/payments.module';
 import { DocumentsModule } from './documents/documents.module';
 import { SupplierNetworksModule } from './supplier-networks/supplier-networks.module';
+import { VerificationModule } from './verification/verification.module';
+import { GovernmentModule } from './government/government.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { LoggingMiddleware } from './common/middleware/logging.middleware';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -50,6 +52,8 @@ import databaseConfig from './config/database.config';
     PaymentsModule,
     DocumentsModule,
     SupplierNetworksModule,
+    VerificationModule,
+    GovernmentModule,
   ],
   providers: [
     {

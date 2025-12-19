@@ -91,6 +91,53 @@ export class BuyersService {
     };
   }
 
+  async findByUserId(userId: string) {
+    try {
+      const buyer = await this.prisma.buyer.findUnique({
+        where: { userId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              avatar: true,
+              verified: true,
+            },
+          },
+          matches: {
+            include: {
+              farmer: {
+                include: {
+                  user: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+              listing: true,
+            },
+          },
+          transactions: true,
+        },
+      });
+
+      if (!buyer) {
+        // Return null instead of throwing error - buyer profile might not exist yet
+        return null;
+      }
+
+      return buyer;
+    } catch (error) {
+      this.logger.error(`Error finding buyer by userId ${userId}: ${error.message}`);
+      return null;
+    }
+  }
+
   async findOne(id: string) {
     const buyer = await this.prisma.buyer.findUnique({
       where: { id },

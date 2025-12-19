@@ -58,6 +58,19 @@ export class MatchingService {
     let score = 0;
     const maxScore = 100;
 
+    // 0. International compliance check (must pass to be considered)
+    // This ensures farmers/traders are verified for export
+    if (!listing.farmer?.user?.verified) {
+      // Unverified farmers get very low score, but not zero (for internal matches)
+      // For international buyers, this should be a hard requirement
+      if (buyer.country && buyer.country !== 'GH') {
+        return 0; // International buyers only see verified suppliers
+      }
+      score -= 20; // Penalty for unverified
+    } else {
+      score += 5; // Bonus for verified status
+    }
+
     // 1. Crop type compatibility (30 points)
     const cropMatch = buyer.seekingCrops.some(
       (crop) => crop.toLowerCase() === listing.cropType.toLowerCase(),

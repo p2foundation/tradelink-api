@@ -4,7 +4,7 @@
 -- This migration adds the Document model for trade document management
 
 -- Create DocumentType enum
-DO $$ 
+DO $$
 BEGIN
     CREATE TYPE "DocumentType" AS ENUM (
         'EXPORT_LICENSE',

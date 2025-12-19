@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsBoolean, IsObject } from 'class-validator';
 
 export class CreateBuyerDto {
   @IsString()
@@ -32,5 +32,35 @@ export class CreateBuyerDto {
   @IsArray()
   @IsString({ each: true })
   qualityStandards: string[];
+
+  // New fields for international buyers
+  @IsOptional()
+  @IsString()
+  importLicenseNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  businessRegistration?: string;
+
+  @IsOptional()
+  @IsString()
+  taxIdNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  preferredLanguage?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  targetMarkets?: string[];
+
+  @IsOptional()
+  @IsObject()
+  importRequirements?: any; // JSON object for country-specific requirements
 }
 
