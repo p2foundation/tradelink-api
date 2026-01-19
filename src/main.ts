@@ -2,6 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -38,8 +42,28 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
 
+  if (process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production') {
+    const httpAdapter = app.getHttpAdapter();
+    httpAdapter.getInstance().set('trust proxy', 1);
+  }
+
   // Use Winston logger
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+
+  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(compression());
+  app.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: process.env.NODE_ENV === 'production' ? 300 : 1000,
+      standardHeaders: true,
+      legacyHeaders: false,
+    }),
+  );
+
+  const requestSizeLimit = process.env.REQUEST_SIZE_LIMIT || '10mb';
+  app.use(json({ limit: requestSizeLimit }));
+  app.use(urlencoded({ extended: true, limit: requestSizeLimit }));
 
   // Enable CORS
   const allowedOrigins = process.env.FRONTEND_URL

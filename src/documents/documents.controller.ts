@@ -71,8 +71,8 @@ export class DocumentsController {
   @ApiParam({ name: 'id', description: 'Document ID' })
   @ApiResponse({ status: 200, description: 'Document retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Document not found' })
-  findOne(@Param('id') id: string) {
-    return this.documentsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.documentsService.findOne(id, req.user?.sub || req.user?.userId);
   }
 
   @Patch(':id')

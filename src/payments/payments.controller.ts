@@ -4,9 +4,11 @@ import {
   Post,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   Patch,
+  Headers,
 } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -27,13 +29,13 @@ export class PaymentsController {
   }
 
   @Get()
-  findAll(@Param('transactionId') transactionId?: string, @Request() req?) {
+  findAll(@Query('transactionId') transactionId?: string, @Request() req?) {
     return this.paymentsService.findAll(transactionId, req?.user?.sub || req?.user?.userId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.paymentsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.paymentsService.findOne(id, req.user?.sub || req.user?.userId);
   }
 
   @Post(':id/upload-receipt')
@@ -59,8 +61,9 @@ export class PaymentsController {
   processCallback(
     @Param('id') id: string,
     @Body() body: { status: PaymentStatus; providerResponse?: any },
+    @Headers('x-payment-signature') signature?: string,
   ) {
-    return this.paymentsService.processPaymentCallback(id, body.status, body.providerResponse);
+    return this.paymentsService.processPaymentCallback(id, body.status, body.providerResponse, signature);
   }
 }
 

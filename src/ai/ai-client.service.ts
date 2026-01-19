@@ -11,10 +11,12 @@ export class AiClientService {
   private readonly logger = new Logger(AiClientService.name);
   private readonly openaiApiKey: string | undefined;
   private readonly useAi: boolean;
+  private readonly openAiTimeoutMs: number;
 
   constructor(private configService: ConfigService) {
     this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY');
     this.useAi = !!this.openaiApiKey && this.openaiApiKey.length > 0;
+    this.openAiTimeoutMs = Number(this.configService.get<string>('OPENAI_TIMEOUT_MS') || 15000);
     
     if (this.useAi) {
       this.logger.log('AI services enabled with OpenAI');
@@ -101,28 +103,42 @@ export class AiClientService {
       throw new Error('OpenAI API key not configured');
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini', // Using cost-effective model
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert agricultural commodity trading advisor specializing in West African markets. Provide concise, actionable insights.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.openAiTimeoutMs);
+    let response: Response;
+
+    try {
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini', // Using cost-effective model
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert agricultural commodity trading advisor specializing in West African markets. Provide concise, actionable insights.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.7,
+          max_tokens: 500,
+        }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        throw new Error('OpenAI API request timed out');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const error = await response.text();

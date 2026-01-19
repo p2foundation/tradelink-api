@@ -41,10 +41,15 @@ export class AuthService {
     this.logger.log(`Registration attempt for email: ${normalizedEmail}, role: ${role}`);
 
     try {
-      // Check if user exists (case-insensitive using raw query for PostgreSQL)
-      const existingUser = await this.prisma.$queryRaw`
-        SELECT * FROM users WHERE LOWER(email) = LOWER(${normalizedEmail}) LIMIT 1
-      ` as any;
+      // Check if user exists (case-insensitive)
+      const existingUser = await this.prisma.user.findFirst({
+        where: {
+          email: {
+            equals: normalizedEmail,
+            mode: 'insensitive',
+          },
+        },
+      });
 
       if (existingUser) {
         this.logger.warn(`Registration failed: User already exists - ${normalizedEmail}`);
@@ -146,18 +151,15 @@ export class AuthService {
     this.logger.log(`Login attempt for email: ${normalizedEmail}`);
 
     try {
-      // Find user - try exact match first (for new users with normalized emails)
-      // Then try case-insensitive search for existing users with mixed-case emails
-      let user = await this.prisma.user.findUnique({
-        where: { email: normalizedEmail },
+      // Find user (case-insensitive)
+      const user = await this.prisma.user.findFirst({
+        where: {
+          email: {
+            equals: normalizedEmail,
+            mode: 'insensitive',
+          },
+        },
       });
-
-      // If not found, try case-insensitive search using raw query for PostgreSQL
-      if (!user) {
-        user = await this.prisma.$queryRaw`
-          SELECT * FROM users WHERE LOWER(email) = LOWER(${normalizedEmail}) LIMIT 1
-        ` as any;
-      }
 
       if (!user) {
         this.logger.warn(`Login failed: User not found - ${normalizedEmail}`);

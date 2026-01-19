@@ -6,6 +6,8 @@ import { UpdateDocumentDto } from './dto/update-document.dto';
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
+  private lastExpiryCheckAt?: number;
+  private readonly expiryCheckIntervalMs = 6 * 60 * 60 * 1000;
 
   constructor(private prisma: PrismaService) {}
 
@@ -93,15 +95,19 @@ export class DocumentsService {
     if (filters?.status) where.status = filters.status;
     if (filters?.transactionId) where.transactionId = filters.transactionId;
 
-    // Check for expired documents
-    const now = new Date();
-    await this.prisma.document.updateMany({
-      where: {
-        expiryDate: { lt: now },
-        status: { not: DocumentStatus.EXPIRED },
-      },
-      data: { status: DocumentStatus.EXPIRED },
-    });
+    // Check for expired documents (throttled)
+    const nowMs = Date.now();
+    if (!this.lastExpiryCheckAt || nowMs - this.lastExpiryCheckAt > this.expiryCheckIntervalMs) {
+      const now = new Date();
+      await this.prisma.document.updateMany({
+        where: {
+          expiryDate: { lt: now },
+          status: { not: DocumentStatus.EXPIRED },
+        },
+        data: { status: DocumentStatus.EXPIRED },
+      });
+      this.lastExpiryCheckAt = nowMs;
+    }
 
     const [documents, total] = await Promise.all([
       this.prisma.document.findMany({
@@ -142,7 +148,7 @@ export class DocumentsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string) {
     const document = await this.prisma.document.findUnique({
       where: { id },
       include: {
@@ -167,6 +173,13 @@ export class DocumentsService {
 
     if (!document) {
       throw new NotFoundException('Document not found');
+    }
+
+    if (userId && document.userId !== userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user?.role !== 'ADMIN') {
+        throw new BadRequestException('You do not have permission to view this document');
+      }
     }
 
     return document;

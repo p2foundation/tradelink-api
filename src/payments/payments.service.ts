@@ -118,7 +118,7 @@ export class PaymentsService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
       include: {
@@ -142,6 +142,24 @@ export class PaymentsService {
 
     if (!payment) {
       throw new NotFoundException('Payment not found');
+    }
+
+    if (userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user?.role !== 'ADMIN') {
+        const [farmer, buyer] = await Promise.all([
+          this.prisma.farmer.findFirst({ where: { userId } }),
+          this.prisma.buyer.findFirst({ where: { userId } }),
+        ]);
+
+        const hasAccess =
+          (buyer && payment.transaction?.buyerId === buyer.id) ||
+          (farmer && payment.transaction?.match?.farmerId === farmer.id);
+
+        if (!hasAccess) {
+          throw new BadRequestException('You do not have permission to view this payment');
+        }
+      }
     }
 
     return payment;
@@ -229,7 +247,16 @@ export class PaymentsService {
     });
   }
 
-  async processPaymentCallback(paymentId: string, status: PaymentStatus, providerResponse?: any) {
+  async processPaymentCallback(
+    paymentId: string,
+    status: PaymentStatus,
+    providerResponse?: any,
+    signature?: string,
+  ) {
+    const callbackSecret = process.env.PAYMENT_CALLBACK_SECRET;
+    if (callbackSecret && signature !== callbackSecret) {
+      throw new BadRequestException('Invalid payment callback signature');
+    }
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
       include: { transaction: true },

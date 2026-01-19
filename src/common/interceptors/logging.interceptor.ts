@@ -37,7 +37,7 @@ export class LoggingInterceptor implements NestInterceptor {
         params,
         query,
         body: this.sanitizeBody(body),
-        userId: user?.sub || 'anonymous',
+        userId: user?.sub || user?.userId || 'anonymous',
         timestamp: new Date().toISOString(),
       },
     });
@@ -86,11 +86,49 @@ export class LoggingInterceptor implements NestInterceptor {
 
   private sanitizeBody(body: any): any {
     if (!body) return body;
-    const sanitized = { ...body };
-    // Remove sensitive fields
-    if (sanitized.password) sanitized.password = '[REDACTED]';
-    if (sanitized.refreshToken) sanitized.refreshToken = '[REDACTED]';
-    if (sanitized.accessToken) sanitized.accessToken = '[REDACTED]';
+
+    if (Array.isArray(body)) {
+      return body.map((item) => this.sanitizeBody(item));
+    }
+
+    if (typeof body === 'string') {
+      return body.length > 500 ? `${body.slice(0, 500)}...[truncated]` : body;
+    }
+
+    if (typeof body !== 'object') {
+      return body;
+    }
+
+    const sanitized: Record<string, any> = {};
+    const sensitiveKeys = new Set([
+      'password',
+      'refreshToken',
+      'accessToken',
+      'token',
+      'fileUrl',
+      'receiptDocument',
+      'invoiceDocument',
+      'contractDocument',
+      'providerResponse',
+    ]);
+
+    Object.entries(body).forEach(([key, value]) => {
+      const normalizedKey = key.toLowerCase();
+      if (
+        sensitiveKeys.has(key) ||
+        normalizedKey.includes('password') ||
+        normalizedKey.includes('token') ||
+        normalizedKey.includes('secret') ||
+        normalizedKey.includes('document') ||
+        normalizedKey.includes('file')
+      ) {
+        sanitized[key] = '[REDACTED]';
+        return;
+      }
+
+      sanitized[key] = this.sanitizeBody(value);
+    });
+
     return sanitized;
   }
 }

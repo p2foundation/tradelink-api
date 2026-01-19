@@ -1,4 +1,4 @@
-import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { DatabaseModule } from './database/database.module';
@@ -22,7 +22,6 @@ import { SupplierNetworksModule } from './supplier-networks/supplier-networks.mo
 import { VerificationModule } from './verification/verification.module';
 import { GovernmentModule } from './government/government.module';
 import { LoggerModule } from './common/logger/logger.module';
-import { LoggingMiddleware } from './common/middleware/logging.middleware';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import databaseConfig from './config/database.config';
 
@@ -62,9 +61,5 @@ import databaseConfig from './config/database.config';
     },
   ],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggingMiddleware).forRoutes('*');
-  }
-}
+export class AppModule {}
 
